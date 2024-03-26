@@ -75,25 +75,27 @@ export function shouldJumpFromDetailToMarker(
     // if so, jump cursor back to the footnote in the text
 
     let match = lineText.match(DetailInLine);
-    if (match) {
-        let s = match[0];
-        let index = s.replace("[^", "");
-        index = index.replace("]:", "");
-        let footnote = s.replace(":", "");
+    if (!match) {
+        return false;
+    }
 
-        let returnLineIndex = cursorPosition.line;
-        // find the FIRST OCCURENCE where this footnote exists in the text
-        for (let i = 0; i < doc.lineCount(); i++) {
-            let scanLine = doc.getLine(i);
-            if (scanLine.contains(footnote)) {
-                let cursorLocationIndex = scanLine.indexOf(footnote);
-                returnLineIndex = i;
-                doc.setCursor({
-                line: returnLineIndex,
-                ch: cursorLocationIndex + footnote.length,
-                });
-                return true;
-            }
+    let s = match[0];
+    let index = s.replace("[^", "");
+    index = index.replace("]:", "");
+    let footnote = s.replace(":", "");
+
+    let returnLineIndex = cursorPosition.line;
+    // find the FIRST OCCURENCE where this footnote exists in the text
+    for (let i = 0; i < doc.lineCount(); i++) {
+        let scanLine = doc.getLine(i);
+        if (scanLine.contains(footnote)) {
+            let cursorLocationIndex = scanLine.indexOf(footnote);
+            returnLineIndex = i;
+            doc.setCursor({
+            line: returnLineIndex,
+            ch: cursorLocationIndex + footnote.length,
+            });
+            return true;
         }
     }
     return false;
@@ -117,38 +119,41 @@ export function shouldJumpFromMarkerToDetail(
     let currentLine = cursorPosition.line;
     let footnotesOnLine = FootnoteMarkerInfo.filter((markerEntry: { lineNum: number; }) => markerEntry.lineNum === currentLine);
 
-    if (footnotesOnLine != null) {
-        for (let i = 0; i <= footnotesOnLine.length-1; i++) {
-            if (footnotesOnLine[i].footnote !== null) {
-                let marker = footnotesOnLine[i].footnote;
-                let indexOfMarkerInLine = footnotesOnLine[i].startIndex;
-                if (
-                cursorPosition.ch >= indexOfMarkerInLine &&
-                cursorPosition.ch <= indexOfMarkerInLine + marker.length
-                ) {
-                markerTarget = marker;
-                break;
-                }
+    if (footnotesOnLine == null) {
+        return false;
+    }
+    for (let i = 0; i <= footnotesOnLine.length-1; i++) {
+        if (footnotesOnLine[i].footnote !== null) {
+            let marker = footnotesOnLine[i].footnote;
+            let indexOfMarkerInLine = footnotesOnLine[i].startIndex;
+            if (
+            cursorPosition.ch >= indexOfMarkerInLine &&
+            cursorPosition.ch <= indexOfMarkerInLine + marker.length
+            ) {
+            markerTarget = marker;
+            break;
             }
         }
     }
-    if (markerTarget !== null) {
-        // extract name
-        let match = markerTarget.match(ExtractNameFromFootnote);
-        if (match) {
-            let footnoteName = match[2];
 
-            // find the first line with this detail marker name in it.
-            for (let i = 0; i < doc.lineCount(); i++) {
-                let theLine = doc.getLine(i);
-                let lineMatch = theLine.match(DetailInLine);
-                if (lineMatch) {
-                    // compare to the index
-                    let nameMatch = lineMatch[1];
-                    if (nameMatch == footnoteName) {
-                        doc.setCursor({ line: i, ch: lineMatch[0].length + 1 });
-                        return true;
-                    }
+    if (markerTarget === null) {
+        return false;
+    }
+    // extract name
+    let match = markerTarget.match(ExtractNameFromFootnote);
+    if (match) {
+        let footnoteName = match[2];
+
+        // find the first line with this detail marker name in it.
+        for (let i = 0; i < doc.lineCount(); i++) {
+            let theLine = doc.getLine(i);
+            let lineMatch = theLine.match(DetailInLine);
+            if (lineMatch) {
+                // compare to the index
+                let nameMatch = lineMatch[1];
+                if (nameMatch == footnoteName) {
+                    doc.setCursor({ line: i, ch: lineMatch[0].length + 1 });
+                    return true;
                 }
             }
         }
@@ -312,67 +317,70 @@ export function shouldCreateMatchingFootnoteDetail(
 
     let markerTarget = null;
 
-    if (reOnlyMarkersMatches){
-        for (let i = 0; i <= reOnlyMarkersMatches.length; i++) {
-            let marker = reOnlyMarkersMatches[i];
-            if (marker != undefined) {
-                let indexOfMarkerInLine = lineText.indexOf(marker);
-                if (
-                    cursorPosition.ch >= indexOfMarkerInLine &&
-                    cursorPosition.ch <= indexOfMarkerInLine + marker.length
-                ) {
-                    markerTarget = marker;
-                    break;
-                }
+    if (!reOnlyMarkersMatches){
+        return;
+    }
+    for (let i = 0; i <= reOnlyMarkersMatches.length; i++) {
+        let marker = reOnlyMarkersMatches[i];
+        if (marker != undefined) {
+            let indexOfMarkerInLine = lineText.indexOf(marker);
+            if (
+                cursorPosition.ch >= indexOfMarkerInLine &&
+                cursorPosition.ch <= indexOfMarkerInLine + marker.length
+            ) {
+                markerTarget = marker;
+                break;
             }
         }
     }
 
-    if (markerTarget != null) {
-        //extract footnote
-        let match = markerTarget.match(ExtractNameFromFootnote)
-        //find if this footnote exists by listing existing footnote details
-        if (match) {
-            let footnoteId = match[2];
-
-            let list: string[] = listExistingFootnoteDetails(doc);
-            
-            // Check if the list is empty OR if the list doesn't include current footnote
-            // if so, add detail for the current footnote
-            if(list === null || !list.includes(footnoteId)) {
-                let lastLineIndex = doc.lastLine();
-                let lastLine = doc.getLine(lastLineIndex);
-
-                while (lastLineIndex > 0) {
-                    lastLine = doc.getLine(lastLineIndex);
-                    if (lastLine.length > 0) {
-                        doc.replaceRange(
-                            "",
-                            { line: lastLineIndex, ch: 0 },
-                            { line: doc.lastLine(), ch: 0 }
-                        );
-                        break;
-                    }
-                    lastLineIndex--;
-                }
-                
-                let footnoteDetail = `\n[^${footnoteId}]: `;
-                            
-                if (list===null || list.length < 1) {
-                    footnoteDetail = "\n" + footnoteDetail;
-                    let Heading = addFootnoteSectionHeader(plugin);
-                    doc.setLine(doc.lastLine(), lastLine + Heading + footnoteDetail);
-                    doc.setCursor(doc.lastLine() - 1, footnoteDetail.length - 1);
-                } else {
-                    doc.setLine(doc.lastLine(), lastLine + footnoteDetail);
-                    doc.setCursor(doc.lastLine(), footnoteDetail.length - 1);
-                }
-
-                return true;
-            }
-            return; 
-        }
+    if (markerTarget == null) {
+        return
     }
+    //extract footnote
+    let match = markerTarget.match(ExtractNameFromFootnote)
+    //find if this footnote exists by listing existing footnote details
+    if (!match) {
+        return
+    }
+    let footnoteId = match[2];
+
+    let list: string[] = listExistingFootnoteDetails(doc);
+    
+    // Check if the list is empty OR if the list doesn't include current footnote
+    // if so, add detail for the current footnote
+    if(list === null || !list.includes(footnoteId)) {
+        let lastLineIndex = doc.lastLine();
+        let lastLine = doc.getLine(lastLineIndex);
+
+        while (lastLineIndex > 0) {
+            lastLine = doc.getLine(lastLineIndex);
+            if (lastLine.length > 0) {
+                doc.replaceRange(
+                    "",
+                    { line: lastLineIndex, ch: 0 },
+                    { line: doc.lastLine(), ch: 0 }
+                );
+                break;
+            }
+            lastLineIndex--;
+        }
+        
+        let footnoteDetail = `\n[^${footnoteId}]: `;
+                    
+        if (list===null || list.length < 1) {
+            footnoteDetail = "\n" + footnoteDetail;
+            let Heading = addFootnoteSectionHeader(plugin);
+            doc.setLine(doc.lastLine(), lastLine + Heading + footnoteDetail);
+            doc.setCursor(doc.lastLine() - 1, footnoteDetail.length - 1);
+        } else {
+            doc.setLine(doc.lastLine(), lastLine + footnoteDetail);
+            doc.setCursor(doc.lastLine(), footnoteDetail.length - 1);
+        }
+
+        return true;
+    }
+    return; 
 }
 
 export function shouldCreateFootnoteMarker(
